@@ -1,102 +1,78 @@
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const morgan = require('morgan');
-require('dotenv').config();
+const app = require('./app');
+const config = require('./config');
+const cacheService = require('./cache/redis');
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-const SERVICE_NAME = 'api-gateway';
+const PORT = config.server.port;
+const SERVICE_NAME = config.server.serviceName;
 
-// Middleware
-app.use(helmet());
-app.use(cors());
-app.use(morgan('combined'));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-    res.status(200).json({
-        status: 'ok',
-        service: SERVICE_NAME,
-        timestamp: new Date().toISOString(),
-        version: '1.0.0',
-        environment: process.env.NODE_ENV || 'development'
-    });
-});
-
-// Root endpoint
-app.get('/', (req, res) => {
-    res.json({
-        service: SERVICE_NAME,
-        message: `Microserviço ${SERVICE_NAME} do Sistema Fature`,
-        version: '1.0.0',
-        endpoints: {
-            health: '/health',
-            api: `/api/v1/${SERVICE_NAME}`
-        }
-    });
-});
-
-// API principal
-app.get(`/api/v1/${SERVICE_NAME}`, (req, res) => {
-    res.json({
-        service: SERVICE_NAME,
-        message: `API do ${SERVICE_NAME} funcionando`,
-        timestamp: new Date().toISOString(),
-        data: {
-            status: 'operational',
-            features: ['health-check', 'basic-api', 'logging']
-        }
-    });
-});
-
-// Endpoint para teste de conectividade
-app.get(`/api/v1/${SERVICE_NAME}/status`, (req, res) => {
-    res.json({
-        service: SERVICE_NAME,
-        status: 'running',
-        uptime: process.uptime(),
-        memory: process.memoryUsage(),
-        timestamp: new Date().toISOString()
-    });
-});
-
-// Error handling
-app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({
-        error: 'Internal Server Error',
-        service: SERVICE_NAME,
-        timestamp: new Date().toISOString()
-    });
-});
-
-// 404 handler
-app.use('*', (req, res) => {
-    res.status(404).json({
-        error: 'Not Found',
-        service: SERVICE_NAME,
-        path: req.originalUrl,
-        timestamp: new Date().toISOString()
-    });
-});
-
-// Start server
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 ${SERVICE_NAME} rodando na porta ${PORT}`);
-    console.log(`📊 Health check: http://localhost:${PORT}/health`);
-    console.log(`🔗 API: http://localhost:${PORT}/api/v1/${SERVICE_NAME}`);
+// Iniciar servidor
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 ${SERVICE_NAME} v2.0 rodando na porta ${PORT}`);
+  console.log(`📊 Health check: http://localhost:${PORT}/health`);
+  console.log(`🔗 API: http://localhost:${PORT}/api/v1`);
+  console.log(`📚 Documentação: http://localhost:${PORT}/docs`);
+  console.log(`🌍 Ambiente: ${config.server.env}`);
+  
+  // Log das funcionalidades ativas
+  console.log('\n🎯 Funcionalidades Ativas:');
+  console.log(`   ✅ Roteamento Inteligente`);
+  console.log(`   ${config.redis.enabled ? '✅' : '❌'} Cache Redis`);
+  console.log(`   ${config.aggregation.enabled ? '✅' : '❌'} Agregação de Dados`);
+  console.log(`   ✅ Rate Limiting (${config.rateLimit.max} req/${config.rateLimit.windowMs/60000}min)`);
+  console.log(`   ${config.monitoring.enabled ? '✅' : '❌'} Monitoramento`);
+  
+  console.log('\n🔗 Microsserviços Configurados:');
+  Object.entries(config.services).forEach(([name, service]) => {
+    console.log(`   • ${name}: ${service.url}`);
+  });
 });
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
-    console.log('📴 Recebido SIGTERM, encerrando servidor...');
-    process.exit(0);
+const gracefulShutdown = async (signal) => {
+  console.log(`\n📴 Recebido ${signal}, encerrando API Gateway...`);
+  
+  // Fechar servidor HTTP
+  server.close(async () => {
+    console.log('✅ Servidor HTTP encerrado');
+    
+    try {
+      // Fechar conexão Redis
+      if (config.redis.enabled) {
+        await cacheService.disconnect();
+      }
+      
+      console.log('✅ Recursos liberados com sucesso');
+      process.exit(0);
+    } catch (error) {
+      console.error('❌ Erro ao liberar recursos:', error);
+      process.exit(1);
+    }
+  });
+
+  // Forçar encerramento após 15 segundos
+  setTimeout(() => {
+    console.error('❌ Forçando encerramento do API Gateway');
+    process.exit(1);
+  }, 15000);
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// Tratamento de erros não capturados
+process.on('uncaughtException', (error) => {
+  console.error('❌ Erro não capturado no API Gateway:', error);
+  process.exit(1);
 });
 
-process.on('SIGINT', () => {
-    console.log('📴 Recebido SIGINT, encerrando servidor...');
-    process.exit(0);
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Promise rejeitada não tratada no API Gateway:', reason);
+  process.exit(1);
 });
+
+// Log de inicialização
+console.log('\n🚀 API Gateway Robusto - Sistema Fature CPA');
+console.log('================================================');
+
+module.exports = server;
+
