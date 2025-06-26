@@ -3,6 +3,49 @@ const router = express.Router();
 const proxyService = require('../services/proxy');
 const aggregationService = require('../services/aggregation');
 const { cacheMiddleware } = require('../middleware/cache');
+const config = require('../config');
+
+// Health check endpoint para /api/v1/health
+router.get('/health', async (req, res) => {
+  try {
+    const startTime = Date.now();
+    
+    // Verificar status básico do gateway
+    const gatewayStatus = {
+      status: 'ok',
+      message: 'API Gateway funcionando'
+    };
+
+    const responseTime = Date.now() - startTime;
+    
+    const healthData = {
+      success: true,
+      message: 'API Gateway funcionando',
+      timestamp: new Date().toISOString(),
+      version: '2.0.0',
+      service: config.server.serviceName,
+      environment: config.server.env,
+      uptime: process.uptime(),
+      checks: {
+        gateway: gatewayStatus
+      },
+      responseTime
+    };
+
+    res.status(200).json(healthData);
+    
+  } catch (error) {
+    console.error('❌ Erro no health check:', error);
+    
+    res.status(503).json({
+      success: false,
+      message: 'API Gateway com problemas',
+      timestamp: new Date().toISOString(),
+      service: config.server.serviceName,
+      error: error.message
+    });
+  }
+});
 
 // Rota para dashboard agregado de afiliado
 router.get('/affiliates/:id/dashboard', 
